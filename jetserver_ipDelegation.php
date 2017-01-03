@@ -1,312 +1,435 @@
-<?php //0046a
-if(!extension_loaded('ionCube Loader')){$__oc=strtolower(substr(php_uname(),0,3));$__ln='ioncube_loader_'.$__oc.'_'.substr(phpversion(),0,3).(($__oc=='win')?'.dll':'.so');if(function_exists('dl')){@dl($__ln);}if(function_exists('_il_exec')){return _il_exec();}$__ln='/ioncube/'.$__ln;$__oid=$__id=realpath(ini_get('extension_dir'));$__here=dirname(__FILE__);if(strlen($__id)>1&&$__id[1]==':'){$__id=str_replace('\\','/',substr($__id,2));$__here=str_replace('\\','/',substr($__here,2));}$__rd=str_repeat('/..',substr_count($__id,'/')).$__here.'/';$__i=strlen($__rd);while($__i--){if($__rd[$__i]=='/'){$__lp=substr($__rd,0,$__i).$__ln;if(file_exists($__oid.$__lp)){$__ln=$__lp;break;}}}if(function_exists('dl')){@dl($__ln);}}else{die('The file '.__FILE__." is corrupted.\n");}if(function_exists('_il_exec')){return _il_exec();}echo('Site error: the file <b>'.__FILE__.'</b> requires the ionCube PHP Loader '.basename($__ln).' to be installed by the website operator. If you are the website operator please use the <a href="http://www.ioncube.com/lw/">ionCube Loader Wizard</a> to assist with installation.');exit(199);
+<?php
+/*
+*
+* IP Delegation
+* Created By Idan Ben-Ezra
+*
+* Copyrights @ Jetserver Web Hosting
+* www.jetserver.net
+*
+* Hook version 1.0.2
+*
+**/
+
+if (!defined("WHMCS"))
+	die("This file cannot be accessed directly");
+
+function hook_ipDelegation_fields($vars)
+{
+	if($vars['filename'] == 'configproducts')
+	{
+		$fields = array(
+			'id'			=> array('Type' => 'int(11)', 'Null' => 'NO', 'Key' => 'PRI', 'Default' => 'NULL', 'Extra' => 'AUTO_INCREMENT'),
+			'pid'			=> array('Type' => 'int(11)', 'Null' => 'NO', 'Key' => '', 'Default' => '0', 'Extra' => ''),
+			'ipdelegation'		=> array('Type' => 'int(11)', 'Null' => 'NO', 'Key' => '', 'Default' => '0', 'Extra' => ''),
+			'mainip'		=> array('Type' => 'varchar(255)', 'Null' => 'NO', 'Key' => '', 'Default' => 'NULL', 'Extra' => ''),
+			'excludereservedips'	=> array('Type' => 'tinyint(1)', 'Null' => 'NO', 'Key' => '', 'Default' => '0', 'Extra' => ''),
+			'excludeips'		=> array('Type' => 'text', 'Null' => 'NO', 'Key' => '', 'Default' => 'NULL', 'Extra' => ''),
+			'includeips'		=> array('Type' => 'text', 'Null' => 'NO', 'Key' => '', 'Default' => 'NULL', 'Extra' => ''),
+			'department'		=> array('Type' => 'int(11)', 'Null' => 'NO', 'Key' => '', 'Default' => '0', 'Extra' => ''),
+		);
+
+		$key_fields = array();
+		$table_fields = array();
+
+		foreach($fields as $field_name => $field_details)
+		{
+			$table_fields[] = "`{$field_name}` {$field_details['Type']} " . ($field_details['Null'] == 'NO' ? "NOT " : '') . "NULL" . ($field_details['Default'] != 'NULL' ? " DEFAULT '{$field_details['Default']}'" : '') . ($field_details['Extra'] ? " {$field_details['Extra']}" : '');
+
+			if($field_details['Key'])
+			{
+				switch($field_details['Key'])
+				{
+					case 'PRI':
+						$key_fields[] = "PRIMARY KEY (`{$field_name}`)";
+					break;
+				}
+			}
+		}
+
+		$table_fields = array_merge($table_fields, $key_fields);
+
+		// create table for the first time.
+		$sql = "CREATE TABLE IF NOT EXISTS `mod_ipdelegation` (\n" . implode(",\n", $table_fields) . "\n) ENGINE=MyISAM";
+		mysql_query($sql);
+
+		$columns = array();
+
+		$sql = "SHOW COLUMNS 
+			FROM `mod_ipdelegation`";
+		$result = mysql_query($sql);
+
+		while($table_details = mysql_fetch_assoc($result))
+		{
+			$columns[$table_details['Field']] = $table_details;
+		}
+		mysql_free_result($result);
+
+		foreach($fields as $field_name => $field_details)
+		{
+			if(!isset($columns[$field_name]))
+			{
+				$sql = "ALTER TABLE `mod_ipdelegation`
+					ADD `{$field_name}` {$field_details['Type']} " . ($field_details['Null'] == 'NO' ? "NOT " : '') . "NULL" . ($field_details['Default'] != 'NULL' ? " DEFAULT '{$field_details['Default']}'" : '') . ($field_details['Extra'] ? " {$field_details['Extra']}" : '');
+				mysql_query($sql);
+			}
+		}
+
+		foreach($columns as $column_name => $column_details)
+		{
+			if(!isset($fields[$column_name]))
+			{
+				$sql = "ALTER TABLE `mod_ipdelegation`
+					DROP `{$column_name}`";
+				mysql_query($sql);
+			}
+		}
+
+		$product_id = isset($_REQUEST['id']) ? intval($_REQUEST['id']) : 0;
+
+		$sql = "SELECT *
+			FROM tblproducts
+			WHERE id = '{$product_id}'";
+		$result = mysql_query($sql);
+		$product_details = mysql_fetch_assoc($result);
+
+		if($product_details && $product_details['servertype'] == 'cpanel')
+		{
+			$sql = "SELECT *
+				FROM mod_ipdelegation
+				WHERE pid = '{$product_id}'";
+			$result = mysql_query($sql);
+			$delegation_details = mysql_fetch_assoc($result);
+
+			$ipdelegation = isset($delegation_details['ipdelegation']) ? intval($delegation_details['ipdelegation']) : 0;
+			$mainip = isset($delegation_details['mainip']) ? $delegation_details['mainip'] : '';
+			$excludereservedips = $delegation_details['excludereservedips'] ? 1 : 0;
+			$excludeips = isset($delegation_details['excludeips']) ? $delegation_details['excludeips'] : '';
+			$includeips = isset($delegation_details['includeips']) ? $delegation_details['includeips'] : '';
+			$department = isset($delegation_details['department']) ? intval($delegation_details['department']) : 0;
+
+			$options = array();
+
+			$sql = "SELECT *
+				FROM tblticketdepartments";
+			$result = mysql_query($sql);
+
+			while($department_details = mysql_fetch_assoc($result))
+			{
+				$options .= "<option value=\"{$department_details['id']}\"" . ($department_details['id'] == $department ? " selected=\"selected\"" : '') . ">{$department_details['name']}</option>";
+			}
+			mysql_free_result($result);
+
+			return "<script type='text/javascript'>$(document).ready(function() { var contentBox = $('#tab3');var delegationTable = $('<table />').addClass('form').css({ marginTop: '15px' }).attr({width: '100%',cellspacing: '2',cellpadding: '3',border: '0'});delegationTable.append('<tr><td class=\"fieldlabel\">Max IP Delegation</td><td class=\"fieldarea\"><input type=\"text\" value=\"{$ipdelegation}\" size=\"5\" name=\"ipdelegation\" /></td><td class=\"fieldlabel\">Main IP Usage</td><td class=\"fieldarea\"><select name=\"mainip\"><option value=\"random\"" . ($mainip == 'random' ? " selected=\"selected\"" : '') . ">Random Selection</option><option value=\"force\"" . ($mainip == 'force' ? " selected=\"selected\"" : '') . ">Force Main IP</option><option value=\"exclude\"" . ($mainip == 'exclude' ? " selected=\"selected\"" : '') . ">Exclude Main IP</option></select></td></tr><tr><td class=\"fieldlabel\">Exclude Reserved IPs</td><td class=\"fieldarea\"><label class=\"checkbox-inline\"><input type=\"checkbox\" value=\"1\" " . ($excludereservedips ? "checked=\"checked\" " : '') . "name=\"excludereservedips\" /> Exclude all reserved IPs</label></td><td class=\"fieldlabel\">Department to Open Ticket on Error</td><td class=\"fieldarea\"><select name=\"department\"><option value=\"0\">Don\'t Open Ticket</option>{$options}</select></td></tr><tr><td class=\"fieldlabel\">Exclude IP Addresses</td><td class=\"fieldarea\"><input type=\"text\" value=\"{$excludeips}\" size=\"30\" name=\"excludeips\" /> Comma Seperated List</td><td class=\"fieldlabel\">Force IP Addresses</td><td class=\"fieldarea\"><input type=\"text\" value=\"{$includeips}\" size=\"30\" name=\"includeips\" /> Comma Seperated List</td></tr>');contentBox.children('table:eq(1)').after(delegationTable);});</script>";
+		}
+	}
+}
+
+function hook_ipDelegation_save($vars)
+{
+	$product_id = isset($_REQUEST['id']) ? intval($_REQUEST['id']) : 0;
+
+	if($vars['servertype'] == 'cpanel')
+	{
+		$ipdelegation = isset($_REQUEST['ipdelegation']) ? intval($_REQUEST['ipdelegation']) : 0;
+		$mainip = isset($_REQUEST['mainip']) ? $_REQUEST['mainip'] : '';
+		$excludereservedips = $_REQUEST['excludereservedips'] ? 1 : 0;
+		$excludeips = isset($_REQUEST['excludeips']) ? $_REQUEST['excludeips'] : '';
+		$includeips = isset($_REQUEST['includeips']) ? $_REQUEST['includeips'] : '';
+		$department = isset($_REQUEST['department']) ? intval($_REQUEST['department']) : 0;
+
+		if($ipdelegation)
+		{
+			$sql = "SELECT *
+				FROM mod_ipdelegation
+				WHERE pid = '{$product_id}'";
+			$result = mysql_query($sql);
+			$delegation_details = mysql_fetch_assoc($result);
+
+			if($delegation_details)
+			{
+				$sql = "UPDATE mod_ipdelegation
+					SET 
+						ipdelegation = '{$ipdelegation}', 
+						mainip = '{$mainip}', 
+						excludereservedips = '{$excludereservedips}', 
+						excludeips = '{$excludeips}', 
+						includeips = '{$includeips}', 
+						department = '{$department}'
+					WHERE id = '{$delegation_details['id']}'";
+				mysql_query($sql);
+			}
+			else
+			{
+				$sql = "INSERT INTO mod_ipdelegation (`pid`,`ipdelegation`,`mainip`,`excludereservedips`,`excludeips`,`includeips`,`department`) VALUES
+					('{$product_id}','{$ipdelegation}','{$mainip}','{$excludereservedips}','{$excludeips}','{$includeips}','{$department}')";
+				mysql_query($sql);
+			}
+		}
+		else
+		{
+			$sql = "DELETE
+				FROM mod_ipdelegation
+				WHERE pid = '{$product_id}'";
+			mysql_query($sql);
+		}
+	}
+	else
+	{
+		$sql = "DELETE
+			FROM mod_ipdelegation
+			WHERE pid = '{$product_id}'";
+		mysql_query($sql);
+	}
+}
+
+function hook_ipDelegation_create($vars)
+{
+	global $CONFIG;
+
+	$dedicated_ip = '';
+	$product_id = $vars['params']['pid'];
+
+	$sql = "SELECT *
+		FROM mod_ipdelegation
+		WHERE pid = '{$product_id}'";
+	$result = mysql_query($sql);
+	$delegation_details = mysql_fetch_assoc($result);
+
+	if($delegation_details)
+	{
+		logModuleCall('ipdelegation', 'settings', '', $delegation_details);
+
+		$ipdelegation = isset($delegation_details['ipdelegation']) ? intval($delegation_details['ipdelegation']) : 0;
+		$mainip = isset($delegation_details['mainip']) ? $delegation_details['mainip'] : '';
+		$excludereservedips = $delegation_details['excludereservedips'] ? true : false;
+		$excludeips = isset($delegation_details['excludeips']) ? explode(',', $delegation_details['excludeips']) : array();
+		$includeips = isset($delegation_details['includeips']) ? explode(',', $delegation_details['includeips']) : array();
+		$department = isset($delegation_details['department']) ? intval($delegation_details['department']) : 0;
+
+		$sql = "SELECT *
+			FROM tblservers
+			WHERE id = '{$vars['params']['serverid']}'";
+		$result = mysql_query($sql);
+		$server_details = mysql_fetch_assoc($result);
+
+		if($server_details && $server_details['username'] && ($server_details['accesshash'] || $server_details['password']))
+		{
+			if($vars['params']['configoption6'] == 'on')
+			{
+				$response = hook_ipDelegation_request($server_details, "json-api/listaccts", array(
+					'searchtype'	=> 'user',
+					'search'	=> $vars['params']['username'],
+					'searchmethod'	=> 'exact',
+					'want'		=> 'ip',
+					'api.version' 	=> 1,
+				));
+
+				if($response['success'])
+				{
+					$response['output'] = json_decode($response['output'], true);
+					$dedicated_ip = $response['output']['data']['acct'][0]['ip'];
+				}
+				else
+				{
+					if($department)
+					{
+						// Something not working properly
+						localAPI('openticket', array(
+							'clientid'	=> 0,
+							'name'		=> 'IP Delegation Hook',
+							'email'		=> $CONFIG['Email'],
+							'deptid' 	=> $department,
+							'subject' 	=> "Failed to find account Dedicated IP",
+							'message' 	=> "We tried to find the account '{$vars['params']['username']}' Dedicated IP on {$server_details['name']} unseccessfully.\nThe error message we got in the response: {$response['message']}",
+							'priority' 	=> 'High',
+						));
+					}
+
+					return;
+				}
+			}
+
+			$selected_ips = array();
+			$available_ips = array();
+			$main_shared_ip = '';
+
+			$response = hook_ipDelegation_request($server_details, "json-api/listips", array('api.version' => 1));
+
+			logModuleCall('ipdelegation', 'listips', "https://{$server_details['hostname']}:2087/json-api/listips?api.version=1", $response, json_decode($response['output'], true));
+
+			if($response['success'])
+			{
+				$response['output'] = json_decode($response['output'], true);
+
+				foreach($response['output']['data']['ip'] as $ip_details)
+				{
+					$ip_details['used'] = preg_match("/^192\.168\./", $ip_details['ip']);
+
+					if($ip_details['mainaddr']) $main_shared_ip = $ip_details['ip'];
+
+					if(($mainip == 'force' && $ip_details['mainaddr']) || in_array($ip_details['ip'], $includeips) || ($dedicated_ip && $dedicated_ip == $ip_details['ip']))
+					{
+						$selected_ips[] = $ip_details['ip'];
+						continue;
+					}
+					elseif(($mainip == 'exclude' && $ip_details['mainaddr']) || in_array($ip_details['ip'], $excludeips) || ($excludereservedips && $ip_details['used']))
+					{
+						continue;
+					}
+
+					$available_ips[] = $ip_details['ip'];
+				}
+			}
+
+			logModuleCall('ipdelegation', 'selected', '', $selected_ips);
+			logModuleCall('ipdelegation', 'available', '', $available_ips);
+
+			if($ipdelegation < count($selected_ips))
+			{
+				$reduce = (count($selected_ips) - $ipdelegation);
+
+				for($i = $ipdelegation; $i < count($selected_ips); $i++)
+				{
+					unset($selected_ips[$i]);
+				}
+			}
+			elseif($ipdelegation > count($selected_ips))
+			{
+				$ip_keys = hook_ipDelegation_uniqueRandom(0, (count($available_ips)-1), ($ipdelegation-count($selected_ips)));
+
+				foreach($ip_keys as $ip_key)
+				{
+					$selected_ips[] = $available_ips[$ip_key];
+				}
+			}
+
+			if(sizeof($selected_ips) && sizeof($selected_ips) == $ipdelegation)
+			{
+				$response = hook_ipDelegation_request($server_details, "json-api/setresellerips", array(
+					'user'		=> $vars['params']['username'],
+					'ips'		=> implode(",", $selected_ips),
+					'delegate'	=> true,
+					'api.version' 	=> 1,
+				));
+
+				logModuleCall('ipdelegation', 'setresellerips', "https://{$server_details['hostname']}:2087/json-api/setresellerips?user={$vars['params']['username']}&ips=" . implode(",", $selected_ips) . "delegate=1&api.version=1", $response);
+
+				if($response['success'])
+				{
+					if($dedicated_ip || !in_array($main_shared_ip, $selected_ips))
+					{
+						$mainip = $dedicated_ip ? $dedicated_ip : $selected_ips[0];
+
+						if($mainip)
+						{
+							$response = hook_ipDelegation_request($server_details, "json-api/setresellermainip", array(
+								'user'		=> $vars['params']['username'],
+								'ip'		=> $mainip,
+								'api.version' 	=> 1,
+							));
+
+							if(!$response['success'])
+							{
+								// Something not working properly
+								localAPI('openticket', array(
+									'clientid'	=> 0,
+									'name'		=> 'IP Delegation Hook',
+									'email'		=> $CONFIG['Email'],
+			 						'deptid' 	=> $department,
+									'subject' 	=> "Failed to set Reseller main shared IP",
+									'message' 	=> "We tried to change the Reseller main shared IP to '{$mainip}' for the account '{$vars['params']['username']}' on {$server_details['name']} unseccessfully.\nThe error message we got in the response: {$response['message']}",
+									'priority' 	=> 'High',
+								));
+							}
+						}
+					}
+
+
+					logActivity("IP Delegation - The IPs " . implode(",", $selected_ips) . " added to the account {$vars['params']['username']} - Service ID: {$vars['params']['serviceid']}");
+				}
+				elseif($department)
+				{
+					// Something not working properly
+					localAPI('openticket', array(
+						'clientid'	=> 0,
+						'name'		=> 'IP Delegation Hook',
+						'email'		=> $CONFIG['Email'],
+ 						'deptid' 	=> $department,
+						'subject' 	=> "Failed to change IP Delegation",
+						'message' 	=> "We tried to change the IP Delegation settings for the account '{$vars['params']['username']}' on {$server_details['name']} unseccessfully.\nThe error message we got in the response: {$response['message']}",
+						'priority' 	=> 'High',
+					));
+				}
+			}
+			elseif($department)
+			{
+				// No selected IPs or not the required IP amount
+
+				localAPI('openticket', array(
+					'clientid'	=> 0,
+					'name'		=> 'IP Delegation Hook',
+					'email'		=> $CONFIG['Email'],
+ 					'deptid' 	=> $department,
+					'subject' 	=> "Failed to change IP Delegation",
+					'message' 	=> "We tried to change the IP Delegation settings for the account '{$vars['params']['username']}' on {$server_details['name']} unseccessfully.\n\nIPs Requested: {$ipdelegation}\nTotal Selected IPs: " . count($selected_ips) . " - " . implode(", " , $selected_ips),
+					'priority' 	=> 'High',
+				));
+			}
+		}
+		elseif($department)
+		{
+			localAPI('openticket', array(
+				'clientid'	=> 0,
+				'name'		=> 'IP Delegation Hook',
+				'email'		=> $CONFIG['Email'],
+ 				'deptid' 	=> $department,
+				'subject' 	=> "Failed to change IP Delegation",
+				'message' 	=> "We tried to change the IP Delegation settings for the account '{$vars['params']['username']}' unseccessfully.\n" . ($server_details ? "We unable to find the server #{$vars['params']['serverid']} in the system database" : (!$server_details['username'] ? "Username and " : '') . "Password or Accesshash is missing for the server {$server_details['name']}.\nUnable to connect to the server without those details."),
+				'priority' 	=> 'High',
+			));
+		}
+	}
+}
+
+function hook_ipDelegation_uniqueRandom($min, $max, $quantity) 
+{
+	$numbers = range($min, $max);
+	shuffle($numbers);
+	return array_slice($numbers, 0, $quantity);
+}
+
+function hook_ipDelegation_request($server_details, $url, $params = '')
+{
+	$output = array('success' => true, 'message' => '', 'output' => '');
+
+	if($server_details['accesshash'])
+	{
+		$authorization = "Authorization: WHM {$server_details['username']}:" . preg_replace("'(\r|\n)'", "", $server_details['accesshash']);
+	}
+	else
+	{
+		$authorization = "Authorization: Basic " . base64_encode("{$server_details['username']}:{$server_details['password']}");
+	}
+
+	$ch = curl_init();
+
+	curl_setopt($ch, CURLOPT_URL, "https://{$server_details['hostname']}:2087/{$url}");
+	if($params) curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($ch, CURLOPT_HTTPHEADER, array($authorization));
+
+	$output['output'] = curl_exec($ch);
+
+	curl_close($ch);
+
+	return $output;
+}
+
+add_hook('AdminAreaHeadOutput', 1, 'hook_ipDelegation_fields');
+add_hook('ProductEdit', 1, 'hook_ipDelegation_save');
+add_hook('AfterModuleCreate', 1, 'hook_ipDelegation_create');
+
 ?>
-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
-NOgrdq3/XglYojbISfX+kwsNuraeXCzGf3/7eVC=
